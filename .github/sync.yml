@@ -1,0 +1,100 @@
+name: Sync from Upstream
+
+on:
+  # 每周一凌晨3点同步（UTC时间，北京时间11点）
+  schedule:
+    - cron: '0 19 * * 0'
+  
+  # 手动触发
+  workflow_dispatch:
+
+env:
+  UPSTREAM_REPO: https://github.com/kenzok8/small-package.git
+  UPSTREAM_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Clone Upstream
+      run: |
+        git clone --depth 1 -b ${{ env.UPSTREAM_BRANCH }} ${{ env.UPSTREAM_REPO }} upstream
+        
+    - name: Read Sync List
+      id: sync_list
+      run: |
+        # 读取需要同步的插件列表（过滤注释和空行）
+        PACKAGES=$(grep -v '^#' SYNC_LIST | grep -v '^$' | tr '\n' ' ')
+        echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
+        echo "Will sync: $PACKAGES"
+
+    - name: Sync Packages
+      run: |
+        PACKAGES="${{ steps.sync_list.outputs.packages }}"
+        
+        for pkg in $PACKAGES; do
+          src="upstream/$pkg"
+          dst="$pkg"
+          
+          if [ -d "$src" ]; then
+            echo "Syncing: $pkg"
+            rm -rf "$dst"
+            cp -r "$src" "$dst"
+          else
+            echo "Skip: $pkg (not found in upstream)"
+          fi
+        done
+        
+        # 清理上游临时目录
+        rm -rf upstream
+
+    - name: Check for Changes
+      id: check_changes
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "Changes detected:"
+          git status --short
+        else
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "No changes detected"
+        fi
+
+    - name: Commit and Push
+      if: steps.check_changes.outputs.has_changes == 'true'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        
+        # 获取当前日期
+        DATE=$(date +%Y-%m-%d)
+        
+        git add -A
+        git commit -m "Sync from upstream $DATE
+        
+Auto-synced packages from kenzok8/small-package"
+        
+        git push
+
+    - name: Create Summary
+      if: always()
+      run: |
+        echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.check_changes.outputs.has_changes }}" == "true" ]; then
+          echo "✅ Changes detected and pushed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Updated packages:" >> $GITHUB_STEP_SUMMARY
+          git diff --name-only HEAD~1 | head -20 | while read f; do
+            echo "- $f" >> $GITHUB_STEP_SUMMARY
+          done
+        else
+          echo "ℹ️ No changes from upstream" >> $GITHUB_STEP_SUMMARY
+        fi
