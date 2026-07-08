@@ -1,0 +1,23 @@
+# RClaw Package 同步配置
+# 记录从 kenzok8/small-package 同步时需要保留的插件列表
+
+# 应用插件
+luci-app-dockerman
+luci-app-netdata
+luci-app-openclash
+luci-app-softethervpn
+luci-app-vlmcsd
+luci-app-xunlei
+
+# 主题
+luci-theme-glass
+
+# 依赖包（根据插件需要自动同步）
+# 这些包会在同步时从上游一起拉取
+# dockerd
+# docker-ce
+# netdata
+# xray-core
+# clash
+# softethervpn
+# vlmcsd
